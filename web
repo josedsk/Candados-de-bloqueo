@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Candados de Bloqueo</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+        }
+        body {
+            background-color: #f5f6fa;
+            padding: 20px;
+        }
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .form-section, .display-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .display-section {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        .btn:hover {
+            background: #2980b9;
+        }
+        .search-bar {
+            margin-bottom: 20px;
+        }
+        .search-bar input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .locks-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .locks-table th, .locks-table td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        .locks-table th {
+            background: #3498db;
+            color: white;
+            font-weight: bold;
+        }
+        .locks-table td {
+            background: #f8f9fa;
+        }
+        .status-active {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .status-inactive {
+            color: #c0392b;
+            font-weight: bold;
+        }
+        .chart-container {
+            height: 200px;
+            width: 100%;
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            background: #2ecc71;
+            color: white;
+            border-radius: 4px;
+            display: none;
+            animation: slideIn 0.5s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .action-btn {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .remove-btn {
+            background: #e74c3c;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+<div class="notification" id="notification"></div>
+<div class="dashboard-container">
+    <div class="form-section">
+        <h2>Registro de Candado</h2>
+        <form id="lockForm">
+            <div class="form-group">
+                <label for="lockNumber">Número de Candado</label>
+                <select id="lockNumber" required>
+                    <!-- Las opciones se generarán dinámicamente -->
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="equipmentNumber">Número de Equipo</label>
+                <input type="text" id="equipmentNumber" required>
+            </div>
+            <div class="form-group">
+                <label for="comments">Comentarios</label>
+                <textarea id="comments" rows="4"></textarea>
+            </div>
+            <button type="submit" class="btn">Guardar Candado</button>
+        </form>
+    </div>
+    <div class="display-section">
+        <div>
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="Buscar por número de candado o equipo...">
+            </div>
+            <table class="locks-table">
+                <thead>
+                    <tr>
+                        <th>N° Candado</th>
+                        <th>N° Equipo</th>
+                        <th>Comentarios</th>
+                        <th>Fecha y Hora de Ingreso</th>
+                        <th>Fecha y Hora de Operativo</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="locksTableBody">
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-container">
+            <canvas id="statusChart"></canvas>
+        </div>
+    </div>
+</div>
+<script>
+    let locks = [];
+    const maxLocks = 40;
+    const allLockNumbers = Array.from({ length: maxLocks }, (_, i) => `Candado ${i + 1}`);
+
+    const ctx = document.getElementById('statusChart').getContext('2d');
+    let statusChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Activos', 'Inactivos'],
+            datasets: [{
+                data: [0, 40],
+                backgroundColor: ['#27ae60', '#e74c3c']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    function showNotification(message) {
+        const notification = document.getElementById('notification');
+        notification.textContent = message;
+        notification.style.display = 'block';
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, 3000);
+    }
+
+    function updateLockNumberOptions() {
+        const select = document.getElementById('lockNumber');
+        select.innerHTML = '';
+        const usedLockNumbers = locks
+            .filter(lock => lock.active)
+            .map(lock => lock.lockNumber);
+        const availableLockNumbers = allLockNumbers.filter(number => !usedLockNumbers.includes(number));
+        availableLockNumbers.forEach(lockNumber => {
+            const option = document.createElement('option');
+            option.value = lockNumber;
+            option.textContent = lockNumber;
+            select.appendChild(option);
+        });
+    }
+
+    function updateTable() {
+        const tbody = document.getElementById('locksTableBody');
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        tbody.innerHTML = '';
+        locks.filter(lock => {
+            return lock.lockNumber.toLowerCase().includes(searchTerm) ||
+                   lock.equipmentNumber.toLowerCase().includes(searchTerm);
+        }).forEach(lock => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${lock.lockNumber}</td>
+                <td>${lock.equipmentNumber}</td>
+                <td>${lock.comments}</td>
+                <td>${lock.date}</td>
+                <td>${lock.operationalDate || '-'}</td>
+                <td class="${lock.active ? 'status-active' : 'status-inactive'}">
+                    ${lock.active ? 'Activo' : 'Inactivo'}
+                </td>
+                <td>
+                    ${lock.active ? 
+                        `<button class="action-btn remove-btn" onclick="toggleLockStatus('${lock.lockNumber}')">
+                            Retirar
+                        </button>` : ''
+                    }
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        const activeLocks = locks.filter(lock => lock.active).length;
+        statusChart.data.datasets[0].data = [activeLocks, maxLocks - activeLocks];
+        statusChart.update();
+    }
+
+    function toggleLockStatus(lockNumber) {
+        const lock = locks.find(l => l.lockNumber === lockNumber);
+        if (lock) {
+            lock.active = false;
+            lock.operationalDate = new Date().toLocaleString();
+            showNotification(`Candado ${lockNumber} retirado`);
+            updateTable();
+            updateLockNumberOptions();
+        }
+    }
+
+    document.getElementById('lockForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const lockNumber = document.getElementById('lockNumber').value;
+        const equipmentNumber = document.getElementById('equipmentNumber').value;
+        const comments = document.getElementById('comments').value;
+        const date = new Date().toLocaleString();
+        if (locks.some(lock => lock.lockNumber === lockNumber)) {
+            showNotification('Este número de candado ya existe');
+            return;
+        }
+        locks.push({
+            lockNumber,
+            equipmentNumber,
+            comments,
+            date,
+            operationalDate: null,
+            active: true
+        });
+        showNotification('Candado registrado exitosamente');
+        e.target.reset();
+        updateTable();
+        updateLockNumberOptions();
+    });
+
+    document.getElementById('searchInput').addEventListener('input', updateTable);
+
+    updateTable();
+    updateLockNumberOptions();
+</script>
+</body>
+</html>
